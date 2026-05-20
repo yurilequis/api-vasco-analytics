@@ -1,0 +1,21 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env
+.venv/
+
+# Database files
+*.db
+*.sqlite3
+*.sqlite
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE and editor files
+.vscode/
