@@ -57,6 +57,8 @@ class CbfScraper:
             eventos_ordenados = sorted(eventos_brutos, key=lambda e: e.get("date", ""))
             resultados = []
             
+            contadores_campeonato = {}
+
             for index, evento in enumerate(eventos_ordenados):
                 competicao = evento["competitions"][0]
                 competidores = competicao["competitors"]
@@ -65,6 +67,10 @@ class CbfScraper:
                 if not nome_campeonato:
                     nome_campeonato = evento.get("season", {}).get("name", "Temporada 2026")
                 
+                # Incrementa o contador apenas para o campeonato da rodada atual
+                contadores_campeonato[nome_campeonato] = contadores_campeonato.get(nome_campeonato, 0) + 1
+                contador_local = contadores_campeonato[nome_campeonato]
+                
                 time_casa = next(c for c in competidores if c["homeAway"] == "home")
                 time_fora = next(c for c in competidores if c["homeAway"] == "away")
                 
@@ -72,7 +78,7 @@ class CbfScraper:
                 visitante = time_fora["team"]["displayName"]
                 status_jogo = competicao["status"]["type"]["state"]
                 
-                # ⏰ Tratamento da Data
+                # ⏰ Tratamento da Data (Mantém igual)
                 data_bruta = evento.get("date") or competicao.get("date")
                 data_formatada = "A definir"
                 if data_bruta:
@@ -85,13 +91,27 @@ class CbfScraper:
                 
                 # Tratamento da Rodada
                 rodada_num = evento.get("week", {}).get("number")
-                if not rodada_num:
-                    notas = competicao.get("notes", [])
-                    if notas:
-                        rodada_num = notas[0].get("headline", "Sem rodada")
-                    else:
-                        rodada_num = f"{index + 1}ª Rodada"
+                notas = competicao.get("notes", [])
+                nota_cabecalho = notas[0].get("headline", "") if notas else ""
                 
+                # Cenário Específico: Sul-Americana
+                if "Sudamericana" in nome_campeonato or "Sul-Americana" in nome_campeonato:
+                    # Se explicitamente disser "Grupo" ou se estivermos nos 6 primeiros jogos do torneio
+                    if "Group" in nota_cabecalho or "Grupo" in nota_cabecalho or contador_local <= 6:
+                        rodada_num = f"Fase de Grupos - {contador_local}ª Rodada"
+                    else:
+                        rodada_num = nota_cabecalho if nota_cabecalho else f"Mata-Mata (Jogo {contador_local})"
+                
+                # Cenário Geral: Brasileirão, Carioca, etc.
+                else:
+                    if rodada_num:
+                        rodada_num = f"{rodada_num}ª Rodada"
+                    elif nota_cabecalho:
+                        rodada_num = nota_cabecalho
+                    else:
+                        # O segredo: Usa o contador_local em vez do index global
+                        rodada_num = f"{contador_local}ª Rodada"
+
                 def extrair_placar(time_dados):
                     placar = time_dados.get("score", 0)
                     if isinstance(placar, dict):
@@ -110,7 +130,7 @@ class CbfScraper:
                     "gols_visitante": gols_v,
                     "status": "Encerrado" if status_jogo == "post" else "Agendado",
                     "data_partida": data_formatada,
-                    "rodada": rodada_num,
+                    "rodada": rodada_num, # 👈 Agora vai limpo e correto pro banco!
                     "campeonato": nome_campeonato,
                     "game_id": str(evento.get("id")),
                 })
@@ -121,6 +141,29 @@ class CbfScraper:
             print(f"⚠️ Erro ao conectar com a ESPN: {e}")
             return []
     
+    def _traduzir_posicao(self, posicao: str) -> str:
+        """Traduz e padroniza as posições vindas da ESPN para o Português (BR)"""
+        if not posicao or posicao == "Não informada":
+            return "Não informada"
+            
+        pos = posicao.lower()
+        
+        # Mapeamento inteligente por palavras-chave
+        if "goalkeeper" in pos or "goleiro" in pos: 
+            return "Goleiro"
+        if "left-back" in pos or "right-back" in pos or "lateral" in pos: 
+            return "Lateral"
+        if "defender" in pos or "center-back" in pos or "centre-back" in pos or "zagueiro" in pos: 
+            return "Zagueiro"
+        if "defensive" in pos or "volante" in pos: 
+            return "Volante"
+        if "midfield" in pos or "meia" in pos: 
+            return "Meia"
+        if "forward" in pos or "striker" in pos or "winger" in pos or "atacante" in pos: 
+            return "Atacante"
+            
+        return posicao.title()
+
     # Adicionado parâmetro default para não quebrar rotas antigas e permitir escalar
     def puxar_elenco_time(self, team_id: str = "3454"):
         url_elenco = f"https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/teams/{team_id}/roster"
@@ -140,7 +183,8 @@ class CbfScraper:
             for jog in jogadores:
                 atleta_id = jog.get("id")
                 nome = jog.get("fullName")
-                posicao = jog.get("position", {}).get("displayName", "Não informada")
+                posicao_crua = jog.get("position", {}).get("displayName", "Não informada")
+                posicao = self._traduzir_posicao(posicao_crua)
                 camisa = jog.get("jersey", "S/N")
                 idade = jog.get("age", 0)
                 
