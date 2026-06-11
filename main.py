@@ -8,7 +8,6 @@ scraper = SofascoreScraper()
 # ==========================================
 # ROTAS FASTAPI (ENDPOINTS)
 # ==========================================
-# Adicione isso logo após definir suas rotas ou ao iniciar a aplicação
 
 @app.get("/api/v1/vasco/jogos", tags=["Calendário"])
 def listar_jogos():
@@ -23,14 +22,12 @@ def listar_jogos():
         if status_desc in ["Canceled", "Postponed", "Abandoned"]:
             continue
         
-
         status_code = evento.get("status", {}).get("code")
         status = "Encerrada" if status_code in [100, 120] else "Agendada"
 
-        # 1. TRATA A DATA PRIMEIRO (Para a variável existir quando fizermos o append)
+        # 1. TRATA A DATA
         timestamp = evento.get("startTimestamp")
         if timestamp:
-            # Converte os segundos do Sofascore para "DD/MM/YYYY HH:MM"
             data_formatada = datetime.fromtimestamp(timestamp).strftime("%d/%m/%Y %H:%M")
         else:
             data_formatada = "A definir"
@@ -40,11 +37,9 @@ def listar_jogos():
         away_score = evento.get("awayScore", {})
             
         def extrair_placares(score_dict):
-            # Procura por "penalty" ou "penalties" (o Sofascore muda dependendo do campeonato)
             penaltis = score_dict.get("penalty", score_dict.get("penalties"))
             tempo_normal = score_dict.get("normaltime")
             
-            # Se a API omitir o 'normaltime', fazemos a matemática segura
             if tempo_normal is None:
                 current = score_dict.get("current")
                 if current is not None and penaltis is not None:
@@ -57,7 +52,7 @@ def listar_jogos():
         gols_m, penaltis_m = extrair_placares(home_score)
         gols_v, penaltis_v = extrair_placares(away_score)
 
-        # 3. SALVA O JOGO UMA ÚNICA VEZ (Com os dados novos)
+        # 3. SALVA O JOGO
         jogos_limpos.append({
             "event_id": evento.get("id"),
             "campeonato": evento.get("tournament", {}).get("name"),
@@ -66,15 +61,15 @@ def listar_jogos():
             "visitante": evento.get("awayTeam", {}).get("name"),
             "gols_mandante": gols_m,
             "gols_visitante": gols_v,
-            "gols_penaltis_mandante": penaltis_m,   # NOVO CAMPO
-            "gols_penaltis_visitante": penaltis_v,  # NOVO CAMPO
+            "gols_penaltis_mandante": penaltis_m,
+            "gols_penaltis_visitante": penaltis_v,
             "status": status
         })
         
     return {"status_api": "sucesso", "dados": jogos_limpos}
 
 
-@app.get("/api/v1/vasco/jogos/{event_id}/estatisticas", tags=["Estatísticas"])
+@app.get("/api/v1/vasco/jogos/{event_id}/estatisticas", tags=["Estatísticas Gerais do Time"])
 def estatisticas_partida(event_id: int):
     grupos_stats = scraper.puxar_estatisticas_partida(event_id)
     if not grupos_stats:
@@ -94,49 +89,9 @@ def estatisticas_partida(event_id: int):
     return {"status_api": "sucesso", "event_id": event_id, "dados": resumo_tecnico}
 
 
-@app.get("/api/v1/vasco/jogos/{event_id}/elenco-partida", tags=["Escalações"])
-def elenco_partida(event_id: int):
-    lineups = scraper.puxar_elenco_partida(event_id)
-    if not lineups:
-        raise HTTPException(status_code=404, detail="Escalações não disponíveis.")
-    
-    def organizar_time(dados_time):
-        if not dados_time: return None
-        return {
-            "formacao": dados_time.get("formation", "Não informada"),
-            "jogadores": [
-                {
-                    "nome": p.get("player", {}).get("name"),
-                    "camisa": p.get("shirtNumber"),
-                    "posicao": p.get("position"),
-                    "titular": p.get("substitute") is False,
-                    "nota_sofascore": p.get("statistics", {}).get("rating", None),
-                    "minutos_jogados": p.get("statistics", {}).get("minutesPlayed", 0)
-                }
-                for p in dados_time.get("players", [])
-            ]
-        }
-    
-
-    return {
-        "status_api": "sucesso",
-        "event_id": event_id,
-        "mandante": organizar_time(lineups.get("home")),
-        "visitante": organizar_time(lineups.get("away"))
-    }
-
-if __name__ == "__main__":
-    print("--- Rotas registradas ---")
-    for route in app.routes:
-        if hasattr(route, "path"):
-            print(f"Rota: {route.path}")
-    
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
-
-@app.get("/api/v1/vasco/jogos/{event_id}/detalhes", tags=["Detalhamento da Partida"])
+@app.get("/api/v1/vasco/jogos/{event_id}/detalhes", tags=["Detalhamento Completo da Partida"])
 def obter_detalhes_partida(event_id: int):
-    """Agrega todas as informações táticas e detalhadas de uma partida específica"""
+    """Agrega todas as informações táticas, linha do tempo e escalações completas de uma partida"""
     
     # 1. Busca os dados gerais da partida (Árbitro, Estádio, Treinadores)
     detalhes_evento = scraper._fazer_requisicao(f"/event/{event_id}")
@@ -154,16 +109,15 @@ def obter_detalhes_partida(event_id: int):
     incidentes_brutos = scraper._fazer_requisicao(f"/event/{event_id}/incidents")
     linha_tempo = []
     if incidentes_brutos and "incidents" in incidentes_brutos:
-        # Lemos de trás para frente (reversed) para ficar na ordem cronológica (minuto 1 ao 90)
+        # Lemos de trás para frente (reversed) para ficar na ordem cronológica
         for inc in reversed(incidentes_brutos["incidents"]):
             tipo = inc.get("incidentType")
             
-            # Filtramos apenas o que importa para o nosso banco
             if tipo in ["goal", "card", "substitution"]:
                 linha_tempo.append({
                     "minuto": inc.get("time"),
                     "acrescimo": inc.get("addedTime", 0),
-                    "periodo": "1T" if inc.get("isHome") else "2T", # Simplificação
+                    "periodo": "1T" if inc.get("isHome") else "2T",
                     "tipo": tipo.upper(),
                     "descricao": inc.get("text", ""),
                     "jogador_principal_id": inc.get("player", {}).get("id"),
@@ -202,7 +156,7 @@ def obter_detalhes_partida(event_id: int):
                     "nome_completo": player_obj.get("name"),
                     "nome_popular": player_obj.get("shortName"),
                     "posicao_geral": player_obj.get("position"),
-                    "posicao_partida": p.get("position"), # A posição específica jogada hoje (ex: LD, ZAG)
+                    "posicao_partida": p.get("position"),
                     "titular": p.get("substitute") is False,
                     "numero_camisa": p.get("shirtNumber"),
                     "nota": stats.get("rating"),
@@ -233,3 +187,15 @@ def obter_detalhes_partida(event_id: int):
         "linha_do_tempo": linha_tempo,
         "escalacoes": escalacoes_formatadas
     }
+
+# ==========================================
+# INICIALIZAÇÃO DO SERVIDOR
+# ==========================================
+if __name__ == "__main__":
+    print("--- Rotas registradas ---")
+    for route in app.routes:
+        if hasattr(route, "path"):
+            print(f"Rota: {route.path}")
+    
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

@@ -1,12 +1,11 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, DateTime
 from database import Base
 import datetime
 
 class Partida(Base):
     __tablename__ = "partidas"
-
     id = Column(Integer, primary_key=True, index=True)
-    game_id = Column(String, unique=True, index=True, nullable=True) # 🔥 NOVO: Para ligar com os gols
+    game_id = Column(String, unique=True, index=True, nullable=True) # ID da Partida no Sofascore
     campeonato = Column(String)
     mandante = Column(String)
     visitante = Column(String)
@@ -18,36 +17,24 @@ class Partida(Base):
 
 class Gol(Base):
     __tablename__ = "gols"
-
     id = Column(Integer, primary_key=True, index=True)
-    game_id = Column(String, index=True) # ID do jogo na ESPN
+    game_id = Column(String, index=True) # Relacionamento com a Partida
     jogador_nome = Column(String, index=True)
     minuto = Column(String, nullable=True)
-    time_goleador = Column(String) # "Vasco" ou o nome do adversário
+    time_goleador = Column(String)
 
 class ControleCache(Base):
     __tablename__ = "controle_cache"
     endpoint = Column(String, primary_key=True, index=True)
     ultima_atualizacao = Column(DateTime, default=datetime.datetime.now)
 
-class Jogador(Base):
-    __tablename__ = "jogadores"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    atleta_id = Column(String, unique=True, index=True) # ID único da ESPN
-    nome = Column(String)
-    posicao = Column(String, nullable=True)
-    camisa = Column(String, nullable=True)
-    idade = Column(Integer, nullable=True)
-
 class EstatisticaAtletaPartida(Base):
     __tablename__ = "estatisticas_atleta_partida"
-
     id = Column(Integer, primary_key=True, index=True)
     game_id = Column(String, index=True) # Relacionamento com a Partida
-    jogador_nome = Column(String, index=True) # Relacionamento com o Elenco
+    jogador_nome = Column(String, index=True) 
     
-    # Estatísticas Individuais (nem sempre a ESPN manda todas, por isso nullable=True)
+    # Estatísticas do Sofascore
     minutos_jogados = Column(String, nullable=True)
     gols = Column(Integer, default=0)
     assistencias = Column(Integer, default=0)
@@ -57,4 +44,4 @@ class EstatisticaAtletaPartida(Base):
     faltas_sofridas = Column(Integer, default=0)
     cartao_amarelo = Column(Integer, default=0)
     cartao_vermelho = Column(Integer, default=0)
-    salvamentos = Column(Integer, default=0) # Para os goleiros
+    salvamentos = Column(Integer, default=0)

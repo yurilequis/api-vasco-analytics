@@ -1,4 +1,4 @@
-from curl_cffi import requests
+import tls_requests as requests
 
 class SofascoreScraper:
     def __init__(self):
@@ -15,19 +15,19 @@ class SofascoreScraper:
     def _fazer_requisicao(self, endpoint: str):
         url = f"{self.base_url}{endpoint}"
         try:
-            # impersonate="chrome120" burla a proteção do Cloudflare
+            # impersonate="chrome120" burla a proteção do Cloudflare magistralmente
             resposta = requests.get(url, headers=self.headers, impersonate="chrome120", timeout=15)
             if resposta.status_code == 200:
                 return resposta.json()
-            print(f"⚠️ Erro {resposta.status_code} ao acessar {url}")
+            print(f"Erro {resposta.status_code} ao acessar {url}")
             return None
         except Exception as e:
-            print(f"❌ Erro de conexão no Sofascore: {e}")
+            print(f"Erro de conexão no Sofascore: {e}")
             return None
 
     def puxar_jogos(self):
         """Busca as partidas do ano inteiro (últimas páginas) e próximos jogos"""
-        print("📊 Buscando calendário completo no Sofascore...")
+        print("Buscando calendário completo no Sofascore...")
         eventos = []
 
         # Busca as últimas 3 páginas (0, 1 e 2) para garantir o histórico desde Janeiro
@@ -47,7 +47,7 @@ class SofascoreScraper:
 
     def puxar_estatisticas_partida(self, event_id: int):
         """Busca estatísticas técnicas (Posse, xG, Chutes, etc)"""
-        print(f"📊 Buscando estatísticas do jogo {event_id}...")
+        print(f"Buscando estatísticas do jogo {event_id}...")
         dados = self._fazer_requisicao(f"/event/{event_id}/statistics")
         if not dados or "statistics" not in dados:
             return []
@@ -55,8 +55,3 @@ class SofascoreScraper:
         # Filtramos pelo período "ALL" (Jogo Completo)
         stats_completas = [s for s in dados["statistics"] if s.get("period") == "ALL"]
         return stats_completas[0].get("groups", []) if stats_completas else []
-
-    def puxar_elenco_partida(self, event_id: int):
-        """Busca formações, titulares, reservas e notas individuais"""
-        print(f"📋 Buscando escalações do jogo {event_id}...")
-        return self._fazer_requisicao(f"/event/{event_id}/lineups")

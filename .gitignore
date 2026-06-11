@@ -19,3 +19,7 @@ Thumbs.db
 
 # IDE and editor files
 .vscode/
+
+# Zip files
+api-vasco-analytics.zip
+
